@@ -1,0 +1,5 @@
+C:\Users\Akbar\Downloads\GM POLOS\gamemodes\new.pwn(20008) : èäåíòèôèêàòîðó ïðèñâîåíî çíà÷åíèå, íî îí íå èñïîëüçóåòñÿ: "NTC"
+C:\Users\Akbar\Downloads\GM POLOS\gamemodes\new.pwn(316) : èäåíòèôèêàòîð íå èñïîëüçóåòñÿ: "RandomEx"
+C:\Users\Akbar\Downloads\GM POLOS\gamemodes\new.pwn(20007) : èäåíòèôèêàòîðó ïðèñâîåíî çíà÷åíèå, íî îí íå èñïîëüçóåòñÿ: "subreker"
+Pawn compiler 3.2.3664	 	 	Copyright (c) 1997-2017, ITB CompuPhase
+
