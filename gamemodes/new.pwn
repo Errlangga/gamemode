@@ -35566,8 +35566,11 @@ public OnVehicleStreamOut(vehicleid, forplayerid)
 }
 
 public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
-{    if(dialogid == DIALOG_GARASI_KOTA_MENU)
+{
+    if(dialogid == DIALOG_GARASI_KOTA_MENU)
     {
+        pDialog[playerid] = false;
+
         if(!response) return 1;
 
         new garageid = GarasiPlayerID[playerid];
