@@ -26,6 +26,7 @@
 #include <discord-connector>
 #include <discord-cmd>
 #include <Dini>
+#include <file>
 #include    <YSI\y_iterate>     // by Y_Less - http://forum.sa-mp.com/showthread.php?t=570884
 #include    <sqlitei>           // by Slice - http://forum.sa-mp.com/showthread.php?t=303682
 #define INVALID_SQL_ID -1
@@ -45,6 +46,8 @@
 #define DIALOG_BOOMBOX7 507
 #define DIALOG_HELPS 10076
 #define DIALOG_INVENTORY 6760
+#define DIALOG_GARASI_KOTA_MENU 29300
+#define DIALOG_GARASI_KOTA_VEHICLES 29301
 //==========================================
 //--------------------------------------------------------
 //===============Variables==================
@@ -4647,6 +4650,538 @@ new engine, lights, alarm, doors, bonnet, boot, objective;
 
 new player_engine_tune[MAX_PLAYERS][MAX_PLAYER_VEHICLES][5];
 new player_brake_tune[MAX_PLAYERS][MAX_PLAYER_VEHICLES][5];
+/*================ Dynamic Garasi Kota ================*/
+#define MAX_GARASI_KOTA 100
+#define MAX_GARAGE_VEHICLE_RECORDS (MAX_PLAYERS * MAX_PLAYER_VEHICLES)
+#define GARAGE_FILE_PATH "scriptfiles/garasikota/garasikota.txt"
+
+enum eGarasiKota
+{
+    bool:gkUsed,
+    Float:gkX,
+    Float:gkY,
+    Float:gkZ,
+    Float:gkA,
+    gkInterior,
+    gkWorld,
+    gkPickup,
+    Text3D:gkLabel
+};
+new GarasiKota[MAX_GARASI_KOTA][eGarasiKota];
+
+enum eGarasiKotaVehicle
+{
+    bool:gkvUsed,
+    gkvAccountID,
+    gkvGarageID,
+    gkvSlot,
+    Float:gkvHealth,
+    gkvDamagePanel,
+    gkvDamageDoors,
+    gkvDamageLights,
+    gkvDamageTires,
+    Float:gkvFuel,
+    Float:gkvMileage
+};
+new GarasiKotaVehicle[MAX_GARAGE_VEHICLE_RECORDS][eGarasiKotaVehicle];
+new GarasiPlayerStored[MAX_PLAYERS][MAX_PLAYER_VEHICLES];
+new GarasiPlayerID[MAX_PLAYERS] = {-1, ...};
+
+stock GarasiKotaResetPlayer(playerid)
+{
+    GarasiPlayerID[playerid] = -1;
+    for(new i; i < MAX_PLAYER_VEHICLES; i++)
+        GarasiPlayerStored[playerid][i] = -1;
+    return 1;
+}
+
+stock GarasiKotaFindFreeID()
+{
+    for(new i; i < MAX_GARASI_KOTA; i++)
+        if(!GarasiKota[i][gkUsed]) return i;
+    return -1;
+}
+
+stock GarasiKotaFindFreeVehicleRecord()
+{
+    for(new i; i < MAX_GARAGE_VEHICLE_RECORDS; i++)
+        if(!GarasiKotaVehicle[i][gkvUsed]) return i;
+    return -1;
+}
+
+stock GarasiKotaFindVehicleRecord(accountid, garageid, slot)
+{
+    for(new i; i < MAX_GARAGE_VEHICLE_RECORDS; i++)
+    {
+        if(!GarasiKotaVehicle[i][gkvUsed]) continue;
+        if(GarasiKotaVehicle[i][gkvAccountID] == accountid &&
+            GarasiKotaVehicle[i][gkvGarageID] == garageid &&
+            GarasiKotaVehicle[i][gkvSlot] == slot)
+            return i;
+    }
+    return -1;
+}
+
+stock GarasiKotaFindPlayerVehicleRecord(accountid, slot)
+{
+    for(new i; i < MAX_GARAGE_VEHICLE_RECORDS; i++)
+    {
+        if(!GarasiKotaVehicle[i][gkvUsed]) continue;
+        if(GarasiKotaVehicle[i][gkvAccountID] == accountid &&
+            GarasiKotaVehicle[i][gkvSlot] == slot)
+            return i;
+    }
+    return -1;
+}
+
+stock GarasiKotaClearVehicleRecord(recordid)
+{
+    if(recordid < 0 || recordid >= MAX_GARAGE_VEHICLE_RECORDS) return 0;
+    GarasiKotaVehicle[recordid][gkvUsed] = false;
+    GarasiKotaVehicle[recordid][gkvAccountID] = 0;
+    GarasiKotaVehicle[recordid][gkvGarageID] = -1;
+    GarasiKotaVehicle[recordid][gkvSlot] = -1;
+    return 1;
+}
+
+stock GarasiKotaSaveData()
+{
+    new File:file = fopen(GARAGE_FILE_PATH, io_write);
+    if(!file)
+    {
+        printf("[GarasiKota] Gagal membuka %s untuk ditulis.", GARAGE_FILE_PATH);
+        return 0;
+    }
+
+    new line[256];
+    fwrite(file, "# Dynamic Garasi Kota - data dikelola otomatis oleh gamemode.\r\n");
+
+    for(new i; i < MAX_GARASI_KOTA; i++)
+    {
+        if(!GarasiKota[i][gkUsed]) continue;
+        format(line, sizeof(line), "G|%d|%.4f|%.4f|%.4f|%.4f|%d|%d\r\n",
+            i, GarasiKota[i][gkX], GarasiKota[i][gkY], GarasiKota[i][gkZ],
+            GarasiKota[i][gkA], GarasiKota[i][gkInterior], GarasiKota[i][gkWorld]);
+        fwrite(file, line);
+    }
+
+    for(new i; i < MAX_GARAGE_VEHICLE_RECORDS; i++)
+    {
+        if(!GarasiKotaVehicle[i][gkvUsed]) continue;
+        format(line, sizeof(line), "V|%d|%d|%d|%.4f|%d|%d|%d|%d|%.4f|%.4f\r\n",
+            GarasiKotaVehicle[i][gkvAccountID], GarasiKotaVehicle[i][gkvGarageID],
+            GarasiKotaVehicle[i][gkvSlot], GarasiKotaVehicle[i][gkvHealth],
+            GarasiKotaVehicle[i][gkvDamagePanel], GarasiKotaVehicle[i][gkvDamageDoors],
+            GarasiKotaVehicle[i][gkvDamageLights], GarasiKotaVehicle[i][gkvDamageTires],
+            GarasiKotaVehicle[i][gkvFuel], GarasiKotaVehicle[i][gkvMileage]);
+        fwrite(file, line);
+    }
+
+    fclose(file);
+    return 1;
+}
+
+stock GarasiKotaCreateVisual(id)
+{
+    if(id < 0 || id >= MAX_GARASI_KOTA || !GarasiKota[id][gkUsed]) return 0;
+
+    if(GarasiKota[id][gkPickup] != 0)
+        DestroyDynamicPickup(GarasiKota[id][gkPickup]);
+    if(GarasiKota[id][gkLabel] != Text3D:-1)
+        DestroyDynamic3DTextLabel(GarasiKota[id][gkLabel]);
+
+    new label[144];
+    format(label, sizeof(label),
+        "Garasi Kota #%d\n{FFFFFF}Tekan {FFFF00}Y {FFFFFF}untuk mengakses\n{FFFFFF}/garkot %d", id, id);
+
+    GarasiKota[id][gkPickup] = CreateDynamicPickup(1316, 23,
+        GarasiKota[id][gkX], GarasiKota[id][gkY], GarasiKota[id][gkZ],
+        GarasiKota[id][gkWorld], GarasiKota[id][gkInterior], -1, 100.0);
+
+    GarasiKota[id][gkLabel] = CreateDynamic3DTextLabel(label, 0xFFFFFFFF,
+        GarasiKota[id][gkX], GarasiKota[id][gkY], GarasiKota[id][gkZ] + 0.85,
+        15.0, INVALID_PLAYER_ID, INVALID_VEHICLE_ID, 0,
+        GarasiKota[id][gkWorld], GarasiKota[id][gkInterior]);
+
+    return 1;
+}
+
+stock GarasiKotaLoadData()
+{
+    for(new i; i < MAX_GARASI_KOTA; i++)
+    {
+        GarasiKota[i][gkUsed] = false;
+        GarasiKota[i][gkPickup] = 0;
+        GarasiKota[i][gkLabel] = Text3D:-1;
+    }
+    for(new i; i < MAX_GARAGE_VEHICLE_RECORDS; i++)
+    {
+        GarasiKotaVehicle[i][gkvUsed] = false;
+        GarasiKotaVehicle[i][gkvGarageID] = -1;
+        GarasiKotaVehicle[i][gkvSlot] = -1;
+    }
+
+    if(!fexist(GARAGE_FILE_PATH))
+    {
+        new File:create_file = fopen(GARAGE_FILE_PATH, io_write);
+        if(create_file)
+        {
+            fwrite(create_file, "# Dynamic Garasi Kota - data dikelola otomatis oleh gamemode.\r\n");
+            fclose(create_file);
+        }
+        return 1;
+    }
+
+    new File:file = fopen(GARAGE_FILE_PATH, io_read);
+    if(!file)
+    {
+        printf("[GarasiKota] Gagal membuka %s untuk dibaca.", GARAGE_FILE_PATH);
+        return 0;
+    }
+
+    new line[512], type[2];
+    while(fread(file, line, sizeof(line)))
+    {
+        if(line[0] == EOS || line[0] == '#') continue;
+
+        if(strfind(line, "G|", true) == 0)
+        {
+            new id, interior, world;
+            new Float:x, Float:y, Float:z, Float:a;
+
+            if(sscanf(line, "p<|>s[2]dffffdd", type, id, x, y, z, a, interior, world))
+                continue;
+            if(id < 0 || id >= MAX_GARASI_KOTA) continue;
+
+            GarasiKota[id][gkUsed] = true;
+            GarasiKota[id][gkX] = x;
+            GarasiKota[id][gkY] = y;
+            GarasiKota[id][gkZ] = z;
+            GarasiKota[id][gkA] = a;
+            GarasiKota[id][gkInterior] = interior;
+            GarasiKota[id][gkWorld] = world;
+        }
+        else if(strfind(line, "V|", true) == 0)
+        {
+            new accountid, garageid, slot;
+            new panel, doors1, lights1, tires;
+            new Float:health, Float:fuel, Float:mileage;
+
+            if(sscanf(line, "p<|>s[2]dddfddddff", type, accountid, garageid, slot,
+                health, panel, doors1, lights1, tires, fuel, mileage))
+                continue;
+
+            if(accountid <= 0 || garageid < 0 || garageid >= MAX_GARASI_KOTA ||
+                slot < 0 || slot >= MAX_PLAYER_VEHICLES ||
+                !GarasiKota[garageid][gkUsed])
+                continue;
+
+            new recordid = GarasiKotaFindFreeVehicleRecord();
+            if(recordid == -1) break;
+
+            GarasiKotaVehicle[recordid][gkvUsed] = true;
+            GarasiKotaVehicle[recordid][gkvAccountID] = accountid;
+            GarasiKotaVehicle[recordid][gkvGarageID] = garageid;
+            GarasiKotaVehicle[recordid][gkvSlot] = slot;
+            GarasiKotaVehicle[recordid][gkvHealth] = health;
+            GarasiKotaVehicle[recordid][gkvDamagePanel] = panel;
+            GarasiKotaVehicle[recordid][gkvDamageDoors] = doors1;
+            GarasiKotaVehicle[recordid][gkvDamageLights] = lights1;
+            GarasiKotaVehicle[recordid][gkvDamageTires] = tires;
+            GarasiKotaVehicle[recordid][gkvFuel] = fuel;
+            GarasiKotaVehicle[recordid][gkvMileage] = mileage;
+        }
+    }
+
+    fclose(file);
+
+    for(new i; i < MAX_GARASI_KOTA; i++)
+        if(GarasiKota[i][gkUsed])
+            GarasiKotaCreateVisual(i);
+
+    return 1;
+}
+
+stock GarasiKotaGetNearest(playerid, Float:range = 3.0)
+{
+    new garageid = -1;
+    new Float:distance = range;
+
+    for(new i; i < MAX_GARASI_KOTA; i++)
+    {
+        if(!GarasiKota[i][gkUsed]) continue;
+        if(GarasiKota[i][gkWorld] != GetPlayerVirtualWorld(playerid)) continue;
+        if(GarasiKota[i][gkInterior] != GetPlayerInterior(playerid)) continue;
+
+        new Float:dist = GetPlayerDistanceFromPoint(playerid,
+            GarasiKota[i][gkX], GarasiKota[i][gkY], GarasiKota[i][gkZ]);
+
+        if(dist <= distance)
+        {
+            distance = dist;
+            garageid = i;
+        }
+    }
+
+    return garageid;
+}
+
+stock GarasiKotaOpenMenu(playerid, garageid)
+{
+    if(garageid < 0 || garageid >= MAX_GARASI_KOTA || !GarasiKota[garageid][gkUsed])
+        return SCM(playerid, COLOR_GREY, "Garasi kota tidak ditemukan.");
+
+    GarasiPlayerID[playerid] = garageid;
+    return SPD(playerid, DIALOG_GARASI_KOTA_MENU, DIALOG_STYLE_LIST,
+        "Garasi Kota", "Simpan kendaraan\nAmbil kendaraan", "Pilih", "Tutup");
+}
+
+stock GarasiKotaShowVehicleList(playerid, garageid)
+{
+    new accountid = GetPlayerAccountID(playerid);
+    new count, str[96];
+
+    String = "";
+    for(new slot; slot < MAX_PLAYER_VEHICLES; slot++)
+    {
+        if(CarInfo[playerid][cModel][slot] == 0) continue;
+
+        new recordid = GarasiKotaFindVehicleRecord(accountid, garageid, slot);
+        if(recordid == -1) continue;
+
+        format(str, sizeof(str), "{a86cfc}%d.\t{ffffff}%s\tGarasi #%d\n",
+            slot + 1, VehicleNames[CarInfo[playerid][cModel][slot] - 400], garageid);
+        strcat(String, str);
+        SetPlayerListitemValue(playerid, count++, slot);
+    }
+
+    if(!count)
+        return SPD(playerid, 0, DIALOG_STYLE_MSGBOX, "Garasi Kota",
+            "Tidak ada kendaraan Anda yang tersimpan di garasi kota ini.", "Tutup", "");
+
+    return SPD(playerid, DIALOG_GARASI_KOTA_VEHICLES, DIALOG_STYLE_TABLIST,
+        "Garasi Kota - Kendaraan", String, "Ambil", "Kembali");
+}
+
+stock GarasiKotaSpawnVehicle(playerid, garageid, slot, recordid)
+{
+    if(recordid < 0 || recordid >= MAX_GARAGE_VEHICLE_RECORDS) return 0;
+    if(!GarasiKotaVehicle[recordid][gkvUsed]) return 0;
+    if(slot < 0 || slot >= MAX_PLAYER_VEHICLES) return 0;
+
+    new model = CarInfo[playerid][cModel][slot];
+    if(model < 400 || model > 611) return 0;
+
+    if(player_home_car[playerid][slot] != INVALID_VEHICLE_ID)
+        DestroyVehicleEx(player_home_car[playerid][slot]);
+
+    new Float:offset = 4.0 + (float(slot) * 2.0);
+    new Float:spawn_x = GarasiKota[garageid][gkX] +
+        (offset * floatsin(-GarasiKota[garageid][gkA], degrees));
+    new Float:spawn_y = GarasiKota[garageid][gkY] +
+        (offset * floatcos(-GarasiKota[garageid][gkA], degrees));
+    new Float:spawn_z = GarasiKota[garageid][gkZ] + 0.35;
+
+    new vehicleid = CreateVehicle(model, spawn_x, spawn_y, spawn_z,
+        GarasiKota[garageid][gkA],
+        CarInfo[playerid][cColor1][slot],
+        CarInfo[playerid][cColor2][slot], -1);
+
+    if(!IsValidVehicle(vehicleid)) return 0;
+
+    SetVehicleVirtualWorld(vehicleid, GarasiKota[garageid][gkWorld]);
+    LinkVehicleToInterior(vehicleid, GarasiKota[garageid][gkInterior]);
+    SetVehicleHealth(vehicleid, GarasiKotaVehicle[recordid][gkvHealth]);
+    Fuell[vehicleid] = GarasiKotaVehicle[recordid][gkvFuel];
+    Milliage[vehicleid] = GarasiKotaVehicle[recordid][gkvMileage];
+
+    CompVeh(playerid, vehicleid);
+    SetVehicleParamsEx(vehicleid, 0, 0, 0, CarInfo[playerid][cLock][slot], 0, 0, 0);
+
+    VehInfo[vehicleid][vStatus] = 2;
+    VehInfo[vehicleid][vEngineTune] = player_engine_tune[playerid][slot];
+    VehInfo[vehicleid][vBrakeTune] = player_brake_tune[playerid][slot];
+
+    UpdateVehicleDamageStatus(vehicleid,
+        GarasiKotaVehicle[recordid][gkvDamagePanel],
+        GarasiKotaVehicle[recordid][gkvDamageDoors],
+        GarasiKotaVehicle[recordid][gkvDamageLights],
+        GarasiKotaVehicle[recordid][gkvDamageTires]);
+
+    vehicle_owner_id[vehicleid] = playerid;
+    player_home_car[playerid][slot] = vehicleid;
+    player_car_keys[playerid][slot] = 1;
+    return vehicleid;
+}
+
+stock GarasiKotaStoreVehicle(playerid, garageid)
+{
+    if(GetPlayerState(playerid) != PLAYER_STATE_DRIVER)
+        return SCM(playerid, COLOR_GREY, "Anda harus berada di kursi pengemudi.");
+
+    new slot = GetPlayerUseHomeCar(playerid);
+    if(slot == -1)
+        return SCM(playerid, COLOR_GREY, "Kendaraan ini bukan kendaraan pribadi Anda.");
+
+    new vehicleid = GetPlayerVehicleID(playerid);
+    if(!IsValidVehicle(vehicleid))
+        return SCM(playerid, COLOR_GREY, "Kendaraan tidak valid.");
+
+    for(new i; i < MAX_PLAYERS; i++)
+    {
+        if(i == playerid) continue;
+        if(IsPlayerConnected(i) && IsPlayerInVehicle(i, vehicleid))
+            return SCM(playerid, COLOR_GREY,
+                "Keluarkan semua penumpang sebelum menyimpan kendaraan.");
+    }
+
+    new accountid = GetPlayerAccountID(playerid);
+    if(accountid <= 0)
+        return SCM(playerid, COLOR_GREY, "Data akun Anda belum siap.");
+
+    if(GarasiKotaFindPlayerVehicleRecord(accountid, slot) != -1)
+        return SCM(playerid, COLOR_GREY, "Kendaraan ini sudah tercatat di garasi kota.");
+
+    new recordid = GarasiKotaFindFreeVehicleRecord();
+    if(recordid == -1)
+        return SCM(playerid, COLOR_GREY, "Penyimpanan garasi kota penuh.");
+
+    new Float:health;
+    new panels, doors1, lights1, tires;
+    new lock_state;
+
+    GetVehicleHealth(vehicleid, health);
+    GetVehicleDamageStatus(vehicleid, panels, doors1, lights1, tires);
+    GetVehicleParamsEx(vehicleid, engine, lights, alarm, lock_state, bonnet, boot, objective);
+
+    CarInfo[playerid][cHeal][slot] = health;
+    CarInfo[playerid][cDamagePanel][slot] = panels;
+    CarInfo[playerid][cDamageDoors][slot] = doors1;
+    CarInfo[playerid][cDamageLights][slot] = lights1;
+    CarInfo[playerid][cDamageTires][slot] = tires;
+    CarInfo[playerid][cFuel][slot] = Fuell[vehicleid];
+    CarInfo[playerid][cProbeg][slot] = Milliage[vehicleid];
+    CarInfo[playerid][cLock][slot] = lock_state;
+
+    GarasiKotaVehicle[recordid][gkvUsed] = true;
+    GarasiKotaVehicle[recordid][gkvAccountID] = accountid;
+    GarasiKotaVehicle[recordid][gkvGarageID] = garageid;
+    GarasiKotaVehicle[recordid][gkvSlot] = slot;
+    GarasiKotaVehicle[recordid][gkvHealth] = health;
+    GarasiKotaVehicle[recordid][gkvDamagePanel] = panels;
+    GarasiKotaVehicle[recordid][gkvDamageDoors] = doors1;
+    GarasiKotaVehicle[recordid][gkvDamageLights] = lights1;
+    GarasiKotaVehicle[recordid][gkvDamageTires] = tires;
+    GarasiKotaVehicle[recordid][gkvFuel] = Fuell[vehicleid];
+    GarasiKotaVehicle[recordid][gkvMileage] = Milliage[vehicleid];
+
+    if(!GarasiKotaSaveData())
+    {
+        GarasiKotaClearVehicleRecord(recordid);
+        return SCM(playerid, COLOR_GREY,
+            "Gagal menyimpan data garasi kota. Kendaraan tidak disimpan.");
+    }
+
+    RemovePlayerFromVehicle(playerid);
+    DestroyVehicleEx(vehicleid);
+    player_home_car[playerid][slot] = INVALID_VEHICLE_ID;
+    player_car_keys[playerid][slot] = 0;
+    GarasiPlayerStored[playerid][slot] = garageid;
+    SaveCars(playerid);
+
+    return SCMF(playerid, COLOR_GREEN,
+        "Kendaraan %s berhasil disimpan di Garasi Kota #%d.",
+        VehicleNames[CarInfo[playerid][cModel][slot] - 400], garageid);
+}
+
+stock GarasiKotaRetrieveVehicle(playerid, garageid, slot)
+{
+    new accountid = GetPlayerAccountID(playerid);
+    new recordid = GarasiKotaFindVehicleRecord(accountid, garageid, slot);
+
+    if(recordid == -1)
+        return SCM(playerid, COLOR_GREY,
+            "Kendaraan itu tidak tersimpan di garasi kota ini.");
+
+    if(CarInfo[playerid][cModel][slot] == 0)
+        return SCM(playerid, COLOR_GREY, "Data kendaraan sudah tidak tersedia.");
+
+    new vehicleid = GarasiKotaSpawnVehicle(playerid, garageid, slot, recordid);
+    if(vehicleid == 0)
+        return SCM(playerid, COLOR_GREY, "Kendaraan gagal dikeluarkan dari garasi.");
+
+    GarasiKotaVehicle[recordid][gkvUsed] = false;
+    GarasiPlayerStored[playerid][slot] = -1;
+
+    if(!GarasiKotaSaveData())
+    {
+        GarasiKotaVehicle[recordid][gkvUsed] = true;
+        GarasiPlayerStored[playerid][slot] = garageid;
+        DestroyVehicleEx(vehicleid);
+        player_home_car[playerid][slot] = INVALID_VEHICLE_ID;
+
+        return SCM(playerid, COLOR_GREY,
+            "Gagal memperbarui data garasi kota. Kendaraan tetap tercatat tersimpan.");
+    }
+
+    SaveCars(playerid);
+
+    return SCMF(playerid, COLOR_GREEN,
+        "Kendaraan %s berhasil dikeluarkan dari Garasi Kota #%d.",
+        VehicleNames[CarInfo[playerid][cModel][slot] - 400], garageid);
+}
+
+stock GarasiKotaLoadPlayer(playerid)
+{
+    for(new slot; slot < MAX_PLAYER_VEHICLES; slot++)
+        GarasiPlayerStored[playerid][slot] = -1;
+
+    new accountid = GetPlayerAccountID(playerid);
+    if(accountid <= 0) return 1;
+
+    new bool:changed;
+
+    for(new i; i < MAX_GARAGE_VEHICLE_RECORDS; i++)
+    {
+        if(!GarasiKotaVehicle[i][gkvUsed]) continue;
+        if(GarasiKotaVehicle[i][gkvAccountID] != accountid) continue;
+
+        new slot = GarasiKotaVehicle[i][gkvSlot];
+        new garageid = GarasiKotaVehicle[i][gkvGarageID];
+
+        if(slot < 0 || slot >= MAX_PLAYER_VEHICLES ||
+            garageid < 0 || garageid >= MAX_GARASI_KOTA ||
+            !GarasiKota[garageid][gkUsed] ||
+            CarInfo[playerid][cModel][slot] == 0)
+        {
+            GarasiKotaClearVehicleRecord(i);
+            changed = true;
+            continue;
+        }
+
+        CarInfo[playerid][cHeal][slot] = GarasiKotaVehicle[i][gkvHealth];
+        CarInfo[playerid][cDamagePanel][slot] = GarasiKotaVehicle[i][gkvDamagePanel];
+        CarInfo[playerid][cDamageDoors][slot] = GarasiKotaVehicle[i][gkvDamageDoors];
+        CarInfo[playerid][cDamageLights][slot] = GarasiKotaVehicle[i][gkvDamageLights];
+        CarInfo[playerid][cDamageTires][slot] = GarasiKotaVehicle[i][gkvDamageTires];
+        CarInfo[playerid][cFuel][slot] = GarasiKotaVehicle[i][gkvFuel];
+        CarInfo[playerid][cProbeg][slot] = GarasiKotaVehicle[i][gkvMileage];
+
+        player_home_car[playerid][slot] = INVALID_VEHICLE_ID;
+        player_car_keys[playerid][slot] = 0;
+        GarasiPlayerStored[playerid][slot] = garageid;
+    }
+
+    if(changed) GarasiKotaSaveData();
+    return 1;
+}
+
+stock GarasiKotaIsStored(playerid, slot)
+{
+    if(slot < 0 || slot >= MAX_PLAYER_VEHICLES) return -1;
+    return GarasiPlayerStored[playerid][slot];
+}
+
 
 stock GetPlayerFreeCarSlot(playerid)
 {
@@ -20006,6 +20541,7 @@ public OnGameModeInit()
     reqsubs = DCC_FindChannelById("");
     subreker = DCC_FindRoleById("");
     NTC = DCC_FindGuildById("");
+	GarasiKotaLoadData();
 	//Drugs
 	for(new i; i < MAKSIMAL_TANAMAN; i++)
 	{
@@ -21355,10 +21891,10 @@ public OnGameModeInit()
 	aIncass[0] = AddStaticVehicleEx_MODIFI(408, 1246.5037,-1816.2910,13.4152,165.0186,1,1,SPAWN_CARS);
 	aIncass[1] = AddStaticVehicleEx_MODIFI(408, 1246.5037-5,-1816.2910,13.4152,165.0186,1,1,SPAWN_CARS);
 
-    aMeria1[0] = AddStaticVehicleEx_MODIFI(400,1403.3497,-1802.8577,13.6146,90.3161,1,1,SPAWN_CARS); // ����� ��
-	AddStaticVehicleEx_MODIFI(400,1403.4808,-1807.2294,13.6117,89.9991,1,1,SPAWN_CARS); // ����� ��
-	AddStaticVehicleEx_MODIFI(400,1403.2822,-1798.7563,13.6411,90.8311,1,1,SPAWN_CARS); // ����� ��
-	aMeria1[1] = AddStaticVehicleEx_MODIFI(400,1403.1390,-1794.5258,13.6402,89.6049,1,1,SPAWN_CARS); // ����� ��
+    aMeria1[0] = AddStaticVehicleEx_MODIFI(400,1403.3497,-1802.8577,13.6146,90.3161,1,1,SPAWN_CARS); // ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½
+	AddStaticVehicleEx_MODIFI(400,1403.4808,-1807.2294,13.6117,89.9991,1,1,SPAWN_CARS); // ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½
+	AddStaticVehicleEx_MODIFI(400,1403.2822,-1798.7563,13.6411,90.8311,1,1,SPAWN_CARS); // ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½
+	aMeria1[1] = AddStaticVehicleEx_MODIFI(400,1403.1390,-1794.5258,13.6402,89.6049,1,1,SPAWN_CARS); // ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½
 
 	aLSPD[0] = AddStaticVehicleEx_MODIFI(415, 1564.540039, -1711.589965, 5.689799, 359.252014, 223,223,SPAWN_CARS);
 	AddStaticVehicleEx_MODIFI(415, 1528.349975, -1688.060058, 5.610000, 269.533996, 223,223,SPAWN_CARS);
@@ -21775,8 +22311,8 @@ CMD:showpass(playerid, params[])//0x999999FF
 	else atext = "Wanita";
 
 	new htext[10];
-	if(GetPlayerHouse(playerid) != -1) format(htext, sizeof(htext), "House �%d", GetPlayerHouse(playerid));
-	else if(PlayerInfo[playerid][pHotel] != -1) format(htext, sizeof(htext), "Hotel �%d", PlayerInfo[playerid][pHotel]);
+	if(GetPlayerHouse(playerid) != -1) format(htext, sizeof(htext), "House ¹%d", GetPlayerHouse(playerid));
+	else if(PlayerInfo[playerid][pHotel] != -1) format(htext, sizeof(htext), "Hotel ¹%d", PlayerInfo[playerid][pHotel]);
 	else htext = "Tunawisma";
 
 	new fmt_str[128];
@@ -24262,7 +24798,7 @@ CMD:car(playerid)
 		format(str, 96, "{a86cfc}%i.\t{ffffff}%s\t%s\n",
 			i+1,
 			VehicleNames[CarInfo[playerid][cModel][i]-400],
-			player_home_car[playerid][i] == INVALID_VEHICLE_ID ? ("Live") : ("Loaded"));
+			GarasiPlayerStored[playerid][i] != -1 ? ("Garasi") : (player_home_car[playerid][i] == INVALID_VEHICLE_ID ? ("Live") : ("Loaded")));
 
 		strcat(String, str);
 
@@ -34643,6 +35179,24 @@ public OnPlayerKeyStateChange(playerid, newkeys, oldkeys)
 		}
 	}
 
+    if(PRESSED(KEY_YES) && !pDialog[playerid])
+    {
+        new garageid = GarasiKotaGetNearest(playerid);
+
+        if(garageid != -1)
+        {
+            if(GetPlayerState(playerid) == PLAYER_STATE_DRIVER)
+            {
+                if(GetPlayerUseHomeCar(playerid) == -1)
+                    return SCM(playerid, COLOR_GREY, "Anda harus menggunakan kendaraan pribadi untuk menyimpan di garasi kota.");
+            }
+            else if(GetPlayerState(playerid) != PLAYER_STATE_ONFOOT)
+                return 1;
+
+            return GarasiKotaOpenMenu(playerid, garageid);
+        }
+    }
+
 	if(PRESSED(KEY_YES))
 	{
 	    callcmd::accept(playerid);
@@ -35012,7 +35566,39 @@ public OnVehicleStreamOut(vehicleid, forplayerid)
 }
 
 public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
-{
+{    if(dialogid == DIALOG_GARASI_KOTA_MENU)
+    {
+        if(!response) return 1;
+
+        new garageid = GarasiPlayerID[playerid];
+        if(garageid < 0 || garageid >= MAX_GARASI_KOTA || !GarasiKota[garageid][gkUsed])
+            return SCM(playerid, COLOR_GREY, "Garasi kota tidak ditemukan.");
+
+        if(listitem == 0)
+            return GarasiKotaStoreVehicle(playerid, garageid);
+
+        if(listitem == 1)
+            return GarasiKotaShowVehicleList(playerid, garageid);
+
+        return 1;
+    }
+
+    if(dialogid == DIALOG_GARASI_KOTA_VEHICLES)
+    {
+        if(!response) return 1;
+
+        new garageid = GarasiPlayerID[playerid];
+        if(garageid < 0 || garageid >= MAX_GARASI_KOTA || !GarasiKota[garageid][gkUsed])
+            return SCM(playerid, COLOR_GREY, "Garasi kota tidak ditemukan.");
+
+        new slot = GetPlayerListitemValue(playerid, listitem);
+        if(slot < 0 || slot >= MAX_PLAYER_VEHICLES)
+            return SCM(playerid, COLOR_GREY, "Pilihan kendaraan tidak valid.");
+
+        return GarasiKotaRetrieveVehicle(playerid, garageid, slot);
+    }
+
+
 	//Drugs
 		switch(dialogid)
 	{
@@ -37176,7 +37762,7 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 			for(new logo = strlen(inputtext); logo != 0; --logo)
 			/*switch(inputtext[logo])
 			/
-			    case '?'..'?', '?'..'�':
+			    case '?'..'?', '?'..'ï¿½':
 				return ShowPlayerDialog(playerid, 104, DIALOG_STYLE_INPUT, "{CC9900}Ubah nama perusahaan", ""W"Masukkan nama perusahaan Anda:\n\nAnda tidak dapat menggunakan karakter Rusia", "Pilih", "Kembali");
 			}*/
 			if(strlen(inputtext) > 31 || strlen(inputtext) < 3) return ShowPlayerDialog(playerid, 104, DIALOG_STYLE_INPUT, "{CC9900}Ubah nama perusahaan", ""W"Masukkan nama perusahaan Anda:\n\nTidak lebih dari 12 karakter atau kurang dari 3 digit", "Pilih", "Kembali");
@@ -38081,6 +38667,9 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 	        listitem = GetPlayerListitemValue(playerid, listitem);
 
 			new model = CarInfo[playerid][cModel][listitem];
+            if(GarasiPlayerStored[playerid][listitem] != -1)
+                return SCMF(playerid, COLOR_GREY, "Kendaraan ini tersimpan di Garasi Kota #%d. Ambil melalui Garasi Kota tersebut.", GarasiPlayerStored[playerid][listitem]);
+
 
 			if(model == 0) return SCM(playerid, COLOR_GREY, "Slot ini kosong.");
 
@@ -42734,7 +43323,7 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 			/*for(new tests = strlen(inputtext); tests != 0; --tests)
 			switch(inputtext[tests])
 			{
-			    case '?'..'?', '?'..'�', ' ': return SPD(playerid,191, DIALOG_STYLE_INPUT, "Nama kontak baru", ""W"Masukkan nama baru untuk kontak ini.\nAnda tidak dapat menggunakan karakter Rusia, coba lagi.", "Terima", "Kembali");
+			    case '?'..'?', '?'..'ï¿½', ' ': return SPD(playerid,191, DIALOG_STYLE_INPUT, "Nama kontak baru", ""W"Masukkan nama baru untuk kontak ini.\nAnda tidak dapat menggunakan karakter Rusia, coba lagi.", "Terima", "Kembali");
 			}*/
 			if(!strlen(inputtext) || strlen(inputtext) < 3 || strlen(inputtext) > 32) return SPD(playerid,191, DIALOG_STYLE_INPUT, "Nama kontak baru", ""W"Masukkan nama baru untuk kontak ini.\nAnda tidak dapat menggunakan kurang dari 3 atau lebih dari 32 karakter.", "Terima", "Kembali");
 			if(!isNum(inputtext)) return SPD(playerid,191, DIALOG_STYLE_INPUT, "Nama kontak baru", ""W"Masukkan nama baru untuk kontak ini.\nNomor tidak dapat berisi angka, coba lagi.", "Terima", "Kembali");
@@ -42942,7 +43531,7 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 		    /*for(new t = strlen(inputtext); t != 0; --t)
 		    switch(inputtext[t])
 			{
-			    case '?'..'?', '?'..'�', ' ':
+			    case '?'..'?', '?'..'ï¿½', ' ':
 				return SPD(playerid, 201, DIALOG_STYLE_INPUT, "Ubah kata sandi", ""W"Masukkan kata sandi baru\nKata sandi hanya dapat terdiri dari karakter latin", "Tunjukkan", "Kembali");
 			}*/
 			if(!strlen(inputtext) || strlen(inputtext) < 6 || strlen(inputtext) > 12)
@@ -43959,6 +44548,7 @@ stock ClearConnectMySQL(playerid)
 stock ClearConnect(playerid)
 {
     for(new i; i < MAX_PLAYER_VEHICLES; i++) player_home_car[playerid][i] = INVALID_VEHICLE_ID;
+    GarasiKotaResetPlayer(playerid);
     SetPVarInt(playerid, "nName", -1);
     player_search_player[playerid] = -1;
     AntiFloodPlayerInit(playerid);
@@ -45932,7 +46522,9 @@ publics: OnPlayerLoadAccounts(playerid)
 	     	if(need_save) SavePlayerCarPark(playerid);
 		}
 
-		new last_date[16];
+		        GarasiKotaLoadPlayer(playerid);
+
+        new last_date[16];
 		cache_get_value_name(0, "pOnline", last_date, 16);
 
 		//
@@ -47713,7 +48305,10 @@ stock LoadVehicles()
 }
 
 stock LoadMyCar(playerid, c_id = -1, type = 0)
-{
+{    if(c_id != -1 && GarasiKotaIsStored(playerid, c_id) != -1)
+        return SCM(playerid, COLOR_GREY, "Kendaraan ini masih tersimpan di Garasi Kota.");
+
+
 	new hotel_id = PlayerInfo[playerid][pHotel];
     new h = GetPlayerHouse(playerid);
     if(h == -1) h = GetPlayerHouseLodger(playerid);
@@ -55321,6 +55916,74 @@ CMD:removedealer(playerid, params[])
     if(stmt_execute(RemoveDealer)) SendClientMessage(playerid, 0x3498DBFF, "DRUG DEALER: {FFFFFF}Dealer removed.");
 	return 1;
 }
+CMD:cgarkot(playerid, params[])
+{
+    if(admin_level[playerid] < 1 || !admin_logged[playerid])
+        return SCM(playerid, COLOR_GREY, "Anda tidak memiliki akses admin.");
+
+    new id = GarasiKotaFindFreeID();
+    if(id == -1)
+        return SCM(playerid, COLOR_GREY, "Slot Garasi Kota sudah penuh.");
+
+    new Float:x, Float:y, Float:z, Float:a;
+    GetPlayerPos(playerid, x, y, z);
+    GetPlayerFacingAngle(playerid, a);
+
+    GarasiKota[id][gkUsed] = true;
+    GarasiKota[id][gkX] = x;
+    GarasiKota[id][gkY] = y;
+    GarasiKota[id][gkZ] = z;
+    GarasiKota[id][gkA] = a;
+    GarasiKota[id][gkInterior] = GetPlayerInterior(playerid);
+    GarasiKota[id][gkWorld] = GetPlayerVirtualWorld(playerid);
+    GarasiKota[id][gkPickup] = 0;
+    GarasiKota[id][gkLabel] = Text3D:-1;
+
+    if(!GarasiKotaCreateVisual(id))
+    {
+        GarasiKota[id][gkUsed] = false;
+        return SCM(playerid, COLOR_GREY, "Gagal membuat Garasi Kota.");
+    }
+
+    if(!GarasiKotaSaveData())
+    {
+        DestroyDynamicPickup(GarasiKota[id][gkPickup]);
+        DestroyDynamic3DTextLabel(GarasiKota[id][gkLabel]);
+
+        GarasiKota[id][gkUsed] = false;
+        GarasiKota[id][gkPickup] = 0;
+        GarasiKota[id][gkLabel] = Text3D:-1;
+
+        return SCM(playerid, COLOR_GREY, "Garasi gagal disimpan ke file.");
+    }
+
+    return SCMF(playerid, COLOR_GREEN, "Garasi Kota #%d berhasil dibuat.", id);
+}
+
+CMD:garkot(playerid, params[])
+{
+    new garageid;
+
+    if(sscanf(params, "d", garageid))
+        return SCM(playerid, COLOR_GREY, "Gunakan: /garkot [id]");
+
+    if(garageid < 0 || garageid >= MAX_GARASI_KOTA || !GarasiKota[garageid][gkUsed])
+        return SCM(playerid, COLOR_GREY, "Garasi Kota tidak ditemukan.");
+
+    if(GetPlayerVirtualWorld(playerid) != GarasiKota[garageid][gkWorld] ||
+        GetPlayerInterior(playerid) != GarasiKota[garageid][gkInterior] ||
+        GetPlayerDistanceFromPoint(playerid, GarasiKota[garageid][gkX], GarasiKota[garageid][gkY], GarasiKota[garageid][gkZ]) > 3.0)
+        return SCM(playerid, COLOR_GREY, "Anda terlalu jauh dari Garasi Kota tersebut.");
+
+    if(GetPlayerState(playerid) == PLAYER_STATE_DRIVER && GetPlayerUseHomeCar(playerid) == -1)
+        return SCM(playerid, COLOR_GREY, "Anda harus menggunakan kendaraan pribadi untuk menyimpan di garasi kota.");
+
+    if(GetPlayerState(playerid) != PLAYER_STATE_ONFOOT && GetPlayerState(playerid) != PLAYER_STATE_DRIVER)
+        return 1;
+
+    return GarasiKotaOpenMenu(playerid, garageid);
+}
+
 DCMD:acc(user, channel, params[])
 {
     if(channel != reqsubs) return DCC_SendChannelMessage(channel, "Error Anda tidak mendapat izin!");
