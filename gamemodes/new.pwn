@@ -4931,6 +4931,19 @@ stock GarasiKotaPlayerAtGarage(playerid, garageid, Float:range = 3.5)
     if(garageid < 0 || garageid >= MAX_GARASI_KOTA || !GarasiKota[garageid][gkUsed])
         return 0;
 
+    if(GetPlayerVirtualWorld(playerid) != GarasiKota[garageid][gkWorld] ||
+        GetPlayerInterior(playerid) != GarasiKota[garageid][gkInterior] ||
+        GetPlayerDistanceFromPoint(playerid,
+            GarasiKota[garageid][gkX],
+            GarasiKota[garageid][gkY],
+            GarasiKota[garageid][gkZ]) > range)
+        return 0;
+
+    return 1;
+}
+
+stock GarasiKotaOpenMenu(playerid, garageid)
+{
     if(!GarasiKotaPlayerAtGarage(playerid, garageid))
         return SCM(playerid, COLOR_GREY, "Anda terlalu jauh dari Garasi Kota tersebut.");
 
@@ -4938,8 +4951,7 @@ stock GarasiKotaPlayerAtGarage(playerid, garageid, Float:range = 3.5)
     pDialog[playerid] = true;
 
     return SPD(playerid, DIALOG_GARASI_KOTA_MENU, DIALOG_STYLE_LIST,
-        "Garasi Kota", "Simpan kendaraan
-Ambil kendaraan", "Pilih", "Tutup");
+        "Garasi Kota", "Simpan kendaraan\nAmbil kendaraan", "Pilih", "Tutup");
 }
 
 stock GarasiKotaShowVehicleList(playerid, garageid)
@@ -4958,8 +4970,7 @@ stock GarasiKotaShowVehicleList(playerid, garageid)
         new model = CarInfo[playerid][cModel][slot];
         if(model < 400 || model > 611) continue;
 
-        format(str, sizeof(str), "{a86cfc}%d.	{ffffff}%s
-",
+        format(str, sizeof(str), "{a86cfc}%d.\t{ffffff}%s\n",
             slot + 1, VehicleNames[model - 400]);
         strcat(String, str);
         SetPlayerListitemValue(playerid, count++, slot);
