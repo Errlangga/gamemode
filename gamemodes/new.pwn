@@ -4926,14 +4926,20 @@ stock GarasiKotaGetNearest(playerid, Float:range = 3.0)
     return garageid;
 }
 
-stock GarasiKotaOpenMenu(playerid, garageid)
+stock GarasiKotaPlayerAtGarage(playerid, garageid, Float:range = 3.5)
 {
     if(garageid < 0 || garageid >= MAX_GARASI_KOTA || !GarasiKota[garageid][gkUsed])
-        return SCM(playerid, COLOR_GREY, "Garasi kota tidak ditemukan.");
+        return 0;
+
+    if(!GarasiKotaPlayerAtGarage(playerid, garageid))
+        return SCM(playerid, COLOR_GREY, "Anda terlalu jauh dari Garasi Kota tersebut.");
 
     GarasiPlayerID[playerid] = garageid;
+    pDialog[playerid] = true;
+
     return SPD(playerid, DIALOG_GARASI_KOTA_MENU, DIALOG_STYLE_LIST,
-        "Garasi Kota", "Simpan kendaraan\nAmbil kendaraan", "Pilih", "Tutup");
+        "Garasi Kota", "Simpan kendaraan
+Ambil kendaraan", "Pilih", "Tutup");
 }
 
 stock GarasiKotaShowVehicleList(playerid, garageid)
@@ -4946,19 +4952,24 @@ stock GarasiKotaShowVehicleList(playerid, garageid)
     {
         if(CarInfo[playerid][cModel][slot] == 0) continue;
 
-        new recordid = GarasiKotaFindVehicleRecord(accountid, garageid, slot);
+        new recordid = GarasiKotaFindPlayerVehicleRecord(accountid, slot);
         if(recordid == -1) continue;
 
-        format(str, sizeof(str), "{a86cfc}%d.\t{ffffff}%s\tGarasi #%d\n",
-            slot + 1, VehicleNames[CarInfo[playerid][cModel][slot] - 400], garageid);
+        new model = CarInfo[playerid][cModel][slot];
+        if(model < 400 || model > 611) continue;
+
+        format(str, sizeof(str), "{a86cfc}%d.	{ffffff}%s
+",
+            slot + 1, VehicleNames[model - 400]);
         strcat(String, str);
         SetPlayerListitemValue(playerid, count++, slot);
     }
 
     if(!count)
         return SPD(playerid, 0, DIALOG_STYLE_MSGBOX, "Garasi Kota",
-            "Tidak ada kendaraan Anda yang tersimpan di garasi kota ini.", "Tutup", "");
+            "Tidak ada kendaraan Anda yang tersimpan di Garasi Kota.", "Tutup", "");
 
+    pDialog[playerid] = true;
     return SPD(playerid, DIALOG_GARASI_KOTA_VEHICLES, DIALOG_STYLE_TABLIST,
         "Garasi Kota - Kendaraan", String, "Ambil", "Kembali");
 }
@@ -4968,6 +4979,7 @@ stock GarasiKotaSpawnVehicle(playerid, garageid, slot, recordid)
     if(recordid < 0 || recordid >= MAX_GARAGE_VEHICLE_RECORDS) return 0;
     if(!GarasiKotaVehicle[recordid][gkvUsed]) return 0;
     if(slot < 0 || slot >= MAX_PLAYER_VEHICLES) return 0;
+    if(garageid < 0 || garageid >= MAX_GARASI_KOTA || !GarasiKota[garageid][gkUsed]) return 0;
 
     new model = CarInfo[playerid][cModel][slot];
     if(model < 400 || model > 611) return 0;
@@ -5016,6 +5028,9 @@ stock GarasiKotaSpawnVehicle(playerid, garageid, slot, recordid)
 
 stock GarasiKotaStoreVehicle(playerid, garageid)
 {
+    if(!GarasiKotaPlayerAtGarage(playerid, garageid))
+        return SCM(playerid, COLOR_GREY, "Anda terlalu jauh dari Garasi Kota tersebut.");
+
     if(GetPlayerState(playerid) != PLAYER_STATE_DRIVER)
         return SCM(playerid, COLOR_GREY, "Anda harus berada di kursi pengemudi.");
 
@@ -5040,11 +5055,11 @@ stock GarasiKotaStoreVehicle(playerid, garageid)
         return SCM(playerid, COLOR_GREY, "Data akun Anda belum siap.");
 
     if(GarasiKotaFindPlayerVehicleRecord(accountid, slot) != -1)
-        return SCM(playerid, COLOR_GREY, "Kendaraan ini sudah tercatat di garasi kota.");
+        return SCM(playerid, COLOR_GREY, "Kendaraan ini sudah tercatat di Garasi Kota.");
 
     new recordid = GarasiKotaFindFreeVehicleRecord();
     if(recordid == -1)
-        return SCM(playerid, COLOR_GREY, "Penyimpanan garasi kota penuh.");
+        return SCM(playerid, COLOR_GREY, "Penyimpanan Garasi Kota penuh.");
 
     new Float:health;
     new panels, doors1, lights1, tires;
@@ -5079,7 +5094,7 @@ stock GarasiKotaStoreVehicle(playerid, garageid)
     {
         GarasiKotaClearVehicleRecord(recordid);
         return SCM(playerid, COLOR_GREY,
-            "Gagal menyimpan data garasi kota. Kendaraan tidak disimpan.");
+            "Gagal menyimpan data Garasi Kota. Kendaraan tidak disimpan.");
     }
 
     RemovePlayerFromVehicle(playerid);
@@ -5096,19 +5111,22 @@ stock GarasiKotaStoreVehicle(playerid, garageid)
 
 stock GarasiKotaRetrieveVehicle(playerid, garageid, slot)
 {
+    if(!GarasiKotaPlayerAtGarage(playerid, garageid))
+        return SCM(playerid, COLOR_GREY, "Anda terlalu jauh dari Garasi Kota tersebut.");
+
     new accountid = GetPlayerAccountID(playerid);
-    new recordid = GarasiKotaFindVehicleRecord(accountid, garageid, slot);
+    new recordid = GarasiKotaFindPlayerVehicleRecord(accountid, slot);
 
     if(recordid == -1)
         return SCM(playerid, COLOR_GREY,
-            "Kendaraan itu tidak tersimpan di garasi kota ini.");
+            "Kendaraan itu tidak tersimpan di Garasi Kota.");
 
     if(CarInfo[playerid][cModel][slot] == 0)
         return SCM(playerid, COLOR_GREY, "Data kendaraan sudah tidak tersedia.");
 
     new vehicleid = GarasiKotaSpawnVehicle(playerid, garageid, slot, recordid);
     if(vehicleid == 0)
-        return SCM(playerid, COLOR_GREY, "Kendaraan gagal dikeluarkan dari garasi.");
+        return SCM(playerid, COLOR_GREY, "Kendaraan gagal dikeluarkan dari Garasi Kota.");
 
     GarasiKotaVehicle[recordid][gkvUsed] = false;
     GarasiPlayerStored[playerid][slot] = -1;
@@ -5121,7 +5139,7 @@ stock GarasiKotaRetrieveVehicle(playerid, garageid, slot)
         player_home_car[playerid][slot] = INVALID_VEHICLE_ID;
 
         return SCM(playerid, COLOR_GREY,
-            "Gagal memperbarui data garasi kota. Kendaraan tetap tercatat tersimpan.");
+            "Gagal memperbarui data Garasi Kota. Kendaraan tetap tercatat tersimpan.");
     }
 
     SaveCars(playerid);
@@ -35577,6 +35595,9 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
         if(garageid < 0 || garageid >= MAX_GARASI_KOTA || !GarasiKota[garageid][gkUsed])
             return SCM(playerid, COLOR_GREY, "Garasi kota tidak ditemukan.");
 
+        if(!GarasiKotaPlayerAtGarage(playerid, garageid))
+            return SCM(playerid, COLOR_GREY, "Anda terlalu jauh dari Garasi Kota tersebut.");
+
         if(listitem == 0)
             return GarasiKotaStoreVehicle(playerid, garageid);
 
@@ -35595,6 +35616,9 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
         new garageid = GarasiPlayerID[playerid];
         if(garageid < 0 || garageid >= MAX_GARASI_KOTA || !GarasiKota[garageid][gkUsed])
             return SCM(playerid, COLOR_GREY, "Garasi kota tidak ditemukan.");
+
+        if(!GarasiKotaPlayerAtGarage(playerid, garageid))
+            return SCM(playerid, COLOR_GREY, "Anda terlalu jauh dari Garasi Kota tersebut.");
 
         new slot = GetPlayerListitemValue(playerid, listitem);
         if(slot < 0 || slot >= MAX_PLAYER_VEHICLES)
@@ -48310,57 +48334,60 @@ stock LoadVehicles()
 }
 
 stock LoadMyCar(playerid, c_id = -1, type = 0)
-{    if(c_id != -1 && GarasiKotaIsStored(playerid, c_id) != -1)
+{
+    if(c_id == -1) c_id = PlayerInfo[playerid][pUseCar];
+
+    if(c_id < 0 || c_id >= MAX_PLAYER_VEHICLES)
+        return SCM(playerid, COLOR_GREY, "Slot kendaraan tidak valid.");
+
+    if(GarasiKotaIsStored(playerid, c_id) != -1)
         return SCM(playerid, COLOR_GREY, "Kendaraan ini masih tersimpan di Garasi Kota.");
 
-
-	new hotel_id = PlayerInfo[playerid][pHotel];
+    new hotel_id = PlayerInfo[playerid][pHotel];
     new h = GetPlayerHouse(playerid);
     if(h == -1) h = GetPlayerHouseLodger(playerid);
-	new car;
+    new car;
 
-	if(c_id == -1) c_id = PlayerInfo[playerid][pUseCar];
+    if(player_home_car[playerid][c_id] != INVALID_VEHICLE_ID) DestroyVehicleEx(player_home_car[playerid][c_id]);
+    if(CarInfo[playerid][cHeal][c_id] <= 300) CarInfo[playerid][cHeal][c_id] = 1000;
 
-	if(player_home_car[playerid][c_id] != INVALID_VEHICLE_ID) DestroyVehicleEx(player_home_car[playerid][c_id]);
-	if(CarInfo[playerid][cHeal][c_id] <= 300) CarInfo[playerid][cHeal][c_id] = 1000;
+    if(type == 0)
+    {
+        car = CreateVehicle(CarInfo[playerid][cModel][c_id], player_car_park[playerid][c_id][0], player_car_park[playerid][c_id][1], player_car_park[playerid][c_id][2], player_car_park[playerid][c_id][3], CarInfo[playerid][cColor1][c_id], CarInfo[playerid][cColor2][c_id], -1);
+        SetVehicleVirtualWorld(car, 0);
+        LinkVehicleToInterior(car, 0);
+    }
+    else
+    {
+        if(h == -1 && hotel_id == -1) return 1;
 
-	if(type == 0)
-	{
-	    car = CreateVehicle(CarInfo[playerid][cModel][c_id], player_car_park[playerid][c_id][0], player_car_park[playerid][c_id][1], player_car_park[playerid][c_id][2], player_car_park[playerid][c_id][3], CarInfo[playerid][cColor1][c_id], CarInfo[playerid][cColor2][c_id], -1);
-	    SetVehicleVirtualWorld(car, 0);
-	    LinkVehicleToInterior(car, 0);
-	}
-	else
-	{
-	    if(h == -1 && hotel_id == -1) return 1;
-
-		if(hotel_id != -1)
-		{
-		    car = CreateVehicle(CarInfo[playerid][cModel][c_id], 1304.3055,-1377.3057,13.6739,178.5732, CarInfo[playerid][cColor1][c_id], CarInfo[playerid][cColor2][c_id], -1);
-		}
-		else car = CreateVehicle(CarInfo[playerid][cModel][c_id], HouseInfo[h][hCarx],HouseInfo[h][hCary],HouseInfo[h][hCarz],HouseInfo[h][hCarc], CarInfo[playerid][cColor1][c_id], CarInfo[playerid][cColor2][c_id], -1);
-	}
+        if(hotel_id != -1)
+        {
+            car = CreateVehicle(CarInfo[playerid][cModel][c_id], 1304.3055,-1377.3057,13.6739,178.5732, CarInfo[playerid][cColor1][c_id], CarInfo[playerid][cColor2][c_id], -1);
+        }
+        else car = CreateVehicle(CarInfo[playerid][cModel][c_id], HouseInfo[h][hCarx],HouseInfo[h][hCary],HouseInfo[h][hCarz],HouseInfo[h][hCarc], CarInfo[playerid][cColor1][c_id], CarInfo[playerid][cColor2][c_id], -1);
+    }
 
     SetVehicleHealth(car, CarInfo[playerid][cHeal][c_id]);
 
-	Fuell[car] = CarInfo[playerid][cFuel][c_id];
-	Milliage[car] = CarInfo[playerid][cProbeg][c_id];
-	CompVeh(playerid, car);
-	SetVehicleParamsEx(car,engine,lights,alarm,CarInfo[playerid][cLock][c_id],bonnet,boot,objective);
+    Fuell[car] = CarInfo[playerid][cFuel][c_id];
+    Milliage[car] = CarInfo[playerid][cProbeg][c_id];
+    CompVeh(playerid, car);
+    SetVehicleParamsEx(car,engine,lights,alarm,CarInfo[playerid][cLock][c_id],bonnet,boot,objective);
 
-	VehInfo[car][vStatus] = 2;
+    VehInfo[car][vStatus] = 2;
 
     VehInfo[car][vEngineTune] = player_engine_tune[playerid][c_id];
-  	VehInfo[car][vBrakeTune] = player_brake_tune[playerid][c_id];
+    VehInfo[car][vBrakeTune] = player_brake_tune[playerid][c_id];
 
-	UpdateVehicleDamageStatus(car, CarInfo[playerid][cDamagePanel][c_id], CarInfo[playerid][cDamageDoors][c_id], CarInfo[playerid][cDamageLights][c_id], CarInfo[playerid][cDamageTires][c_id]);
+    UpdateVehicleDamageStatus(car, CarInfo[playerid][cDamagePanel][c_id], CarInfo[playerid][cDamageDoors][c_id], CarInfo[playerid][cDamageLights][c_id], CarInfo[playerid][cDamageTires][c_id]);
 
     vehicle_owner_id[car] = playerid;
 
-	player_home_car[playerid][c_id] = car;
-	player_car_keys[playerid][c_id] = 1;
+    player_home_car[playerid][c_id] = car;
+    player_car_keys[playerid][c_id] = 1;
 
-	return true;
+    return true;
 }
 
 epublic: LoadMyNumber(playerid)
