@@ -35588,6 +35588,8 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 
     if(dialogid == DIALOG_GARASI_KOTA_VEHICLES)
     {
+        pDialog[playerid] = false;
+
         if(!response) return 1;
 
         new garageid = GarasiPlayerID[playerid];
